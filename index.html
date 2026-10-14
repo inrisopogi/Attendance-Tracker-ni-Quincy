@@ -3,8 +3,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Attendance Tracker</title>
 <link rel="manifest" href="/manifest.json" crossorigin="use-credentials">
-<link rel="icon" href="/icon.svg">
-<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-180.png">
 <meta name="theme-color" content="#2f6fed">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -54,8 +54,16 @@ input,select{border:1px solid var(--bd);background:var(--card);border-radius:8px
 <script>
 const KEY='attendance-tracker-v1';
 let S={students:[],records:{}},ref=null,tab='students',q='',msg='',
-    date=new Date().toISOString().slice(0,10),draft={},sumId='',sync='Saved on this device';
+    date=todayStr(),picked=false,draft={},sumId='',sync='Saved on this device';
 const $=s=>document.querySelector(s);
+const TZ='Asia/Manila'; // Philippine time (UTC+8); change this if used in another country
+function todayStr(){return new Intl.DateTimeFormat('en-CA',{timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())}
+function refreshDate(){
+  if(picked||date===todayStr())return;
+  if(tab==='attendance'&&Object.keys(draft).length)return;
+  date=todayStr();draft={...(S.records[date]||{})};render();
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshDate()});
 const esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const norm=d=>({students:Array.isArray(d&&d.students)?d.students:[],records:(d&&d.records)||{}});
 try{S=norm(JSON.parse(localStorage.getItem(KEY)||'null'))}catch(e){}
@@ -183,7 +191,7 @@ function render(){
   V.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delStudent(b.dataset.del));
   V.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{draft[b.dataset.id]=b.dataset.k;render()});
   const qi=$('#q');if(qi)qi.oninput=()=>{q=qi.value;const p=qi.selectionStart;render();const n=$('#q');n.focus();n.setSelectionRange(p,p)};
-  const di=$('#date');if(di)di.onchange=()=>{if(di.value){date=di.value;draft={...(S.records[date]||{})};msg='';render()}};
+  const di=$('#date');if(di)di.onchange=()=>{if(di.value){picked=true;date=di.value;draft={...(S.records[date]||{})};msg='';render()}};
   const su=$('#sum');if(su)su.onchange=()=>{sumId=su.value;render()};
   const sn=$('#sname');if(sn)sn.onkeydown=e=>{if(e.key==='Enter')addStudent()};
 }
