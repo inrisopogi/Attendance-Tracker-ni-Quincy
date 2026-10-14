@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Attendance Tracker</title>
+<link rel="manifest" href="/manifest.json" crossorigin="use-credentials">
+<link rel="icon" href="/icon.svg">
+<link rel="apple-touch-icon" href="/icon.svg">
+<meta name="theme-color" content="#2f6fed">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f6f7f9;--card:#fff;--tx:#1d2330;--mut:#6b7385;--bd:#e3e6ec;--ac:#2f6fed;--P:#1f9d55;--A:#d64545;--L:#d98a14;--E:#6b5bd6}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14161b;--card:#1d2027;--tx:#e8eaf0;--mut:#9aa1b2;--bd:#2d313b;--ac:#6b9bff}}
+:root[data-theme="dark"]{--bg:#14161b;--card:#1d2027;--tx:#e8eaf0;--mut:#9aa1b2;--bd:#2d313b;--ac:#6b9bff}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:720px;margin:0 auto;padding:16px}
+h1{font-size:1.3rem;margin:0}
+.top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.sync{font-size:.8rem;color:var(--mut)}
+nav{display:flex;gap:6px;margin:14px 0;overflow-x:auto}
+nav button{flex:1;white-space:nowrap}
+button,input,select{font:inherit;color:inherit}
+button{border:1px solid var(--bd);background:var(--card);border-radius:8px;padding:8px 12px;cursor:pointer}
+button.on,button.pri{background:var(--ac);border-color:var(--ac);color:#fff}
+button.del{color:var(--A);padding:4px 8px}
+input,select{border:1px solid var(--bd);background:var(--card);border-radius:8px;padding:8px 10px;width:100%}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:12px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row>input{flex:1;min-width:120px}
+.row>input.id{flex:0 0 90px;min-width:90px}
+.list>div{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--bd)}
+.list>div:first-child{border-top:0}
+.mut{color:var(--mut)}
+.seg{display:flex;gap:4px}
+.seg button{padding:6px 10px;min-width:38px}
+.seg button.sP.on{background:var(--P);border-color:var(--P)}
+.seg button.sA.on{background:var(--A);border-color:var(--A)}
+.seg button.sL.on{background:var(--L);border-color:var(--L)}
+.seg button.sE.on{background:var(--E);border-color:var(--E)}
+.tag{font-weight:600}.tP{color:var(--P)}.tA{color:var(--A)}.tL{color:var(--L)}.tE{color:var(--E)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center;margin:12px 0}
+.stats div{border:1px solid var(--bd);border-radius:10px;padding:8px}
+.stats b{display:block;font-size:1.3rem}
+.big{font-size:2rem;font-weight:700}
+.wrap{overflow-x:auto}
+.name{min-width:0;overflow-wrap:anywhere}
+</style></head><body><main>
+<div class="top"><h1>Attendance Tracker</h1><span class="sync" id="sync"></span></div>
+<nav id="nav"></nav>
+<div id="view"></div>
+</main>
+<script>
+const KEY='attendance-tracker-v1';
+let S={students:[],records:{}},ref=null,tab='students',q='',msg='',
+    date=new Date().toISOString().slice(0,10),draft={},sumId='',sync='Saved on this device';
+const $=s=>document.querySelector(s);
+const esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm=d=>({students:Array.isArray(d&&d.students)?d.students:[],records:(d&&d.records)||{}});
+try{S=norm(JSON.parse(localStorage.getItem(KEY)||'null'))}catch(e){}
+
+let dirty=false,who='';
+function persist(){
+  try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
+  dirty=true;sync='Saving…';head();
+  fetch('/api/data',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(S)})
+    .then(r=>{if(!r.ok)throw 0;dirty=false;sync='Synced';head()})
+    .catch(()=>{sync='Offline: saved on this device only';head()});
+}
+async function init(){await pull(true)}
+async function pull(first){
+  if(dirty&&!first){persist();return}
+  try{
+    const r=await fetch('/api/data');if(!r.ok)throw 0;
+    const raw=await r.json();who=raw.user||'';const d=norm(raw);
+    if(first&&!d.students.length&&S.students.length)persist();
+    else{S=d;try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}sync='Synced'}
+  }catch(e){sync='Offline: saved on this device only'}
+  head();if(tab!=='attendance')render();
+}
+window.addEventListener('focus',()=>pull(false));
+
+const sidx=id=>S.students.findIndex(s=>s.id===id);
+const stat=(d,id)=>(S.records[d]||{})[id];
+function head(){
+  $('#sync').textContent=(who?who+' · ':'')+sync;
+  const T=[['students','Students'],['attendance','Take'],['daily','Daily'],['summary','Summary']];
+  $('#nav').innerHTML=T.map(t=>`<button class="${tab===t[0]?'on':''}" data-t="${t[0]}">${t[1]}</button>`).join('');
+  $('#nav').querySelectorAll('button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;msg='';if(tab==='attendance')draft={...(S.records[date]||{})};render()});
+}
+function addStudent(){
+  const id=$('#sid').value.trim(),name=$('#sname').value.trim();
+  if(!id||!name){msg='Enter both an ID and a name.';return render()}
+  if(sidx(id)!==-1){msg='Student ID already exists!';return render()}
+  S.students.push({id,name});persist();msg='Student added.';render();
+}
+function delStudent(id){
+  const s=S.students[sidx(id)];
+  if(!s||!confirm(`Remove ${s.name} and all their attendance records?`))return;
+  S.students.splice(sidx(id),1);
+  for(const d in S.records){delete S.records[d][id];if(!Object.keys(S.records[d]).length)delete S.records[d]}
+  persist();render();
+}
+function saveAttendance(){
+  const day=S.records[date]||{};
+  S.students.forEach(s=>{if(draft[s.id])day[s.id]=draft[s.id]});
+  S.records[date]=day;persist();msg=`Attendance for ${date} saved.`;render();
+}
+
+function importText(t){
+  let n=0,skip=0;
+  t.split(/\r?\n/).forEach(l=>{
+    const i=l.indexOf('|');if(i<1)return;
+    const id=l.slice(0,i).trim(),name=l.slice(i+1).trim();
+    if(!id||!name)return;
+    if(sidx(id)!==-1){skip++;return}
+    S.students.push({id,name});n++;
+  });
+  if(n)persist();
+  msg=`Imported ${n} student(s)`+(skip?`, skipped ${skip} duplicate ID(s)`:'')+'.';render();
+}
+async function importSheet(file){
+  const fd=new FormData();fd.append('file',file);
+  try{
+    const r=await fetch('/api/parse-import',{method:'POST',body:fd});
+    const d=await r.json();
+    if(!r.ok){msg=d.error||'Import failed.';return render()}
+    let ns=0,nr=0;
+    d.students.forEach(s=>{if(sidx(s.id)===-1){S.students.push(s);ns++}});
+    for(const day in d.records){
+      const t=S.records[day]=S.records[day]||{};
+      for(const id in d.records[day]){t[id]=d.records[day][id];nr++}
+    }
+    persist();msg=`Imported ${ns} new student(s) and ${nr} attendance mark(s).`;render();
+  }catch(e){msg='Import failed. Check your connection.';render()}
+}
+function vStudents(){
+  const f=S.students.filter(s=>(s.name+' '+s.id).toLowerCase().includes(q.toLowerCase()));
+  return `<div class="card"><div class="row"><input class="id" id="sid" placeholder="ID"><input id="sname" placeholder="Student name"><button class="pri" id="add">Add</button></div></div>
+  <div class="card"><div class="row"><button id="impx" class="pri">Import spreadsheet</button><input type="file" id="filex" accept=".xlsx,.csv" hidden><button id="imp">Import students.txt</button><button id="exp">Download spreadsheet</button><input type="file" id="file" accept=".txt,text/plain" hidden></div></div>
+  <div class="card"><input id="q" placeholder="Search by name or ID" value="${esc(q)}">
+  <div class="list" style="margin-top:8px">${f.map(s=>`<div><span class="name"><b>${esc(s.id)}</b> &nbsp;${esc(s.name)}</span><button class="del" data-del="${esc(s.id)}">Remove</button></div>`).join('')||`<p class="mut">${S.students.length?'No student found.':'No students registered.'}</p>`}</div></div>`;
+}
+function vTake(){
+  if(!S.students.length)return `<div class="card mut">No students registered yet.</div>`;
+  return `<div class="card"><div class="row"><input type="date" id="date" value="${date}" style="flex:1"><button id="allp">All present</button></div>
+  <p class="mut" style="margin:8px 0 0">P = Present · A = Absent · L = Late · E = Excused</p></div>
+  <div class="card list">${S.students.map(s=>`<div><span class="name"><b>${esc(s.id)}</b> ${esc(s.name)}</span><span class="seg">${'PALE'.split('').map(k=>`<button class="s${k} ${draft[s.id]===k?'on':''}" data-id="${esc(s.id)}" data-k="${k}">${k}</button>`).join('')}</span></div>`).join('')}</div>
+  <button class="pri" id="save" style="width:100%">Save attendance</button>`;
+}
+function vDaily(){
+  return `<div class="card"><input type="date" id="date" value="${date}"></div>
+  <div class="card wrap"><table style="width:100%;border-collapse:collapse"><tr class="mut" style="text-align:left"><th>ID</th><th>Name</th><th>Status</th></tr>
+  ${S.students.map(s=>{const k=stat(date,s.id);return `<tr style="border-top:1px solid var(--bd)"><td style="padding:8px 0">${esc(s.id)}</td><td>${esc(s.name)}</td><td class="tag t${k||''}">${k||'–'}</td></tr>`}).join('')||'<tr><td class="mut" colspan="3">No students registered.</td></tr>'}</table></div>`;
+}
+function vSummary(){
+  const opts=`<option value="">Select a student…</option>`+S.students.map(s=>`<option value="${esc(s.id)}" ${s.id===sumId?'selected':''}>${esc(s.id)} – ${esc(s.name)}</option>`).join('');
+  let out='';
+  const st=S.students[sidx(sumId)];
+  if(st){
+    const c={P:0,A:0,L:0,E:0};
+    for(const d in S.records){const k=S.records[d][st.id];if(k)c[k]++}
+    const total=c.P+c.A+c.L+c.E,pct=total?((c.P+c.L+c.E)/total*100).toFixed(2):'0.00';
+    out=`<div class="card"><b>${esc(st.name)}</b> <span class="mut">(ID ${esc(st.id)})</span>
+    <div class="stats"><div><b class="tP">${c.P}</b>Present</div><div><b class="tA">${c.A}</b>Absent</div><div><b class="tL">${c.L}</b>Late</div><div><b class="tE">${c.E}</b>Excused</div></div>
+    <div class="mut">Attendance percentage</div><div class="big">${pct}%</div><div class="mut">Present, late and excused count as attended · ${total} day(s) recorded</div></div>`;
+  }
+  return `<div class="card"><select id="sum">${opts}</select></div>${out}`;
+}
+function render(){
+  head();
+  const v=tab==='students'?vStudents():tab==='attendance'?vTake():tab==='daily'?vDaily():vSummary();
+  $('#view').innerHTML=(msg?`<p class="card" style="padding:10px 14px">${esc(msg)}</p>`:'')+v;
+  const V=$('#view'),on=(s,f)=>{const e=V.querySelector(s);if(e)e.onclick=f};
+  on('#add',addStudent);on('#save',saveAttendance);
+  on('#imp',()=>$('#file').click());
+  on('#impx',()=>$('#filex').click());
+  const fx=$('#filex');if(fx)fx.onchange=()=>{if(fx.files[0])importSheet(fx.files[0])};
+  on('#exp',()=>{location.href='/api/export.xlsx'});
+  const fi=$('#file');if(fi)fi.onchange=()=>{const f=fi.files[0];if(f)f.text().then(importText)};
+  on('#allp',()=>{S.students.forEach(s=>draft[s.id]='P');render()});
+  V.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delStudent(b.dataset.del));
+  V.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{draft[b.dataset.id]=b.dataset.k;render()});
+  const qi=$('#q');if(qi)qi.oninput=()=>{q=qi.value;const p=qi.selectionStart;render();const n=$('#q');n.focus();n.setSelectionRange(p,p)};
+  const di=$('#date');if(di)di.onchange=()=>{if(di.value){date=di.value;draft={...(S.records[date]||{})};msg='';render()}};
+  const su=$('#sum');if(su)su.onchange=()=>{sumId=su.value;render()};
+  const sn=$('#sname');if(sn)sn.onkeydown=e=>{if(e.key==='Enter')addStudent()};
+}
+render();init();
+</script></body></html>

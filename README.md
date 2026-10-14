@@ -13,9 +13,9 @@ Flask app, Firestore database, mobile-friendly UI you can add to your phone's ho
 ## 2. Try it on your computer
 ```
 pip install -r requirements.txt
-APP_PASSWORD=choose-a-password python app.py      # Windows PowerShell: $env:APP_PASSWORD="..."; python app.py
+USERS=juan:pass1,maria:pass2 python app.py      # Windows Command Prompt: set USERS=juan:pass1,maria:pass2
 ```
-Open http://localhost:8080 (any username, your password). Click **Load class list**.
+Open http://localhost:8080 and log in with one of the usernames and passwords. Add students one by one, or use **Import spreadsheet** with the Attendance Template.
 
 ## 3. Deploy so your phone can use it
 
@@ -44,3 +44,14 @@ It opens full-screen like an app.
 - Data: `students/{id}` and `attendance/{date}` documents in Firestore.
 - Anyone with the URL and password can edit records, so use a strong password.
 - A real Play Store / App Store app would need a separate native or Flutter build.
+
+## Accounts: each person logs in with their own username and password
+Set one environment variable, `USERS`, as `username:password` pairs separated by commas:
+
+    USERS=juan:Pass1word,maria:Another2Pass,teacher.ana:Third3Pass
+
+- On Render: Environment > add `USERS` (it replaces `APP_PASSWORD`), then save; Render redeploys.
+- Usernames: letters, numbers, `.`, `_`, `-` only (not case-sensitive). Passwords must not contain `,` or `:`.
+- Each login gets its own private students and attendance. People cannot see each other's data.
+- To add, remove or change a person, edit `USERS` and save. Removing a person blocks their login but keeps their data in Firebase.
+- If `USERS` is not set but `APP_PASSWORD` is, everyone shares one password and one set of data.

@@ -1,16 +1,17 @@
 """Attendance Tracker: Flask + Firebase Firestore (Python port of the C++ program).
 
-Firestore layout:
-  students/{id}        -> {name}
-  attendance/{date}    -> {studentId: "P" | "A" | "L" | "E"}
+Firestore layout (one private space per login):
+  users/{username}/students/{id}      -> {name}
+  users/{username}/attendance/{date}  -> {studentId: "P" | "A" | "L" | "E"}
 """
+import hmac
 import json
 import os
 import re
 
 import firebase_admin
 from firebase_admin import credentials, firestore
-from flask import Flask, Response, jsonify, request, send_file
+from flask import Flask, Response, g, jsonify, request, send_file
 
 from export_xlsx import build_workbook
 from import_xlsx import parse_spreadsheet
@@ -32,19 +33,49 @@ def init_db():
 
 
 db = init_db()
-PASSWORD = os.environ.get("APP_PASSWORD")
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+NAME_RE = re.compile(r"^[a-z0-9_.-]{1,40}$")
+
+
+def load_users():
+    """USERS="juan:pass1,maria:pass2" -> {"juan": "pass1", "maria": "pass2"}"""
+    users = {}
+    for pair in os.environ.get("USERS", "").split(","):
+        if ":" in pair:
+            name, pw = pair.split(":", 1)
+            name, pw = name.strip().lower(), pw.strip()
+            if NAME_RE.match(name) and pw:
+                users[name] = pw
+    return users
+
+
+USERS = load_users()
+SHARED_PASSWORD = os.environ.get("APP_PASSWORD")  # optional: one shared login
 
 
 @app.before_request
-def require_password():
-    if not PASSWORD:
+def require_login():
+    if not USERS and not SHARED_PASSWORD:
+        g.user = "local"  # no login configured (local testing only)
         return None
     auth = request.authorization
-    if auth and auth.password == PASSWORD:
-        return None
+    if auth and auth.username:
+        name, pw = auth.username.strip().lower(), auth.password or ""
+        if USERS:
+            expected = USERS.get(name)
+            if expected and hmac.compare_digest(expected.encode(), pw.encode()):
+                g.user = name
+                return None
+        elif hmac.compare_digest(SHARED_PASSWORD.encode(), pw.encode()):
+            g.user = "shared"
+            return None
     return Response("Login required", 401,
                     {"WWW-Authenticate": 'Basic realm="Attendance Tracker"'})
+
+
+def user_doc():
+    """Each user's data lives under users/{username}/..., private to that login."""
+    return db.collection("users").document(g.user)
 
 
 @app.get("/")
@@ -58,16 +89,16 @@ def sort_key(s):
 
 def load_all():
     students = [{"id": d.id, "name": d.to_dict().get("name", "")}
-                for d in db.collection("students").stream()]
+                for d in user_doc().collection("students").stream()]
     students.sort(key=sort_key)
-    records = {d.id: d.to_dict() for d in db.collection("attendance").stream()}
+    records = {d.id: d.to_dict() for d in user_doc().collection("attendance").stream()}
     return students, records
 
 
 @app.get("/api/data")
 def get_data():
     students, records = load_all()
-    return jsonify(students=students, records=records)
+    return jsonify(students=students, records=records, user=g.user)
 
 
 @app.get("/api/export.xlsx")
@@ -78,9 +109,8 @@ def export_xlsx():
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
-def replace_collection(name, new_docs):
+def replace_collection(ref, new_docs):
     """Make the collection exactly equal to new_docs ({doc_id: data})."""
-    ref = db.collection(name)
     old_ids = {d.id for d in ref.list_documents()}
     ops = [("set", k, v) for k, v in new_docs.items()]
     ops += [("delete", k, None) for k in old_ids - new_docs.keys()]
@@ -126,8 +156,8 @@ def put_data():
         if clean:
             record_docs[day] = clean
 
-    replace_collection("students", student_docs)
-    replace_collection("attendance", record_docs)
+    replace_collection(user_doc().collection("students"), student_docs)
+    replace_collection(user_doc().collection("attendance"), record_docs)
     return jsonify(ok=True)
 
 

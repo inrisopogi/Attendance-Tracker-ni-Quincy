@@ -2,7 +2,7 @@
 
 Expected layout (the file produced by "Download spreadsheet" works as-is):
   ID | Name | ...any other columns... | 2026-10-13 | 2026-10-14 | ...
-  1  | Abad, Jamil | ... | P | L
+  1  | Dela Cruz, Juan | ... | P | L
 Only ID and Name are required. Any column whose header is a date (YYYY-MM-DD or a
 real spreadsheet date) is read as attendance: P/A/L/E or Present/Absent/Late/Excused.
 """
