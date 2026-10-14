@@ -3,8 +3,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Attendance Tracker</title>
 <link rel="manifest" href="/manifest.json" crossorigin="use-credentials">
-<link rel="icon" href="/icon.svg">
-<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-180.png">
 <meta name="theme-color" content="#2f6fed">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -54,13 +54,21 @@ input,select{border:1px solid var(--bd);background:var(--card);border-radius:8px
 <script>
 const KEY='attendance-tracker-v1';
 let S={students:[],records:{}},ref=null,tab='students',q='',msg='',
-    date=new Date().toISOString().slice(0,10),draft={},sumId='',sync='Saved on this device';
+    date=todayStr(),picked=false,draft={},sumId='',sync='Saved on this device';
 const $=s=>document.querySelector(s);
+const TZ='Asia/Manila'; // Philippine time (UTC+8); change this if used in another country
+function todayStr(){return new Intl.DateTimeFormat('en-CA',{timeZone:TZ,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())}
+function refreshDate(){
+  if(picked||date===todayStr())return;
+  if(tab==='attendance'&&Object.keys(draft).length)return;
+  date=todayStr();draft={...(S.records[date]||{})};render();
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshDate()});
 const esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const norm=d=>({students:Array.isArray(d&&d.students)?d.students:[],records:(d&&d.records)||{}});
 try{S=norm(JSON.parse(localStorage.getItem(KEY)||'null'))}catch(e){}
 
-let dirty=false;
+let dirty=false,who='';
 function persist(){
   try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
   dirty=true;sync='Saving…';head();
@@ -73,7 +81,7 @@ async function pull(first){
   if(dirty&&!first){persist();return}
   try{
     const r=await fetch('/api/data');if(!r.ok)throw 0;
-    const d=norm(await r.json());
+    const raw=await r.json();who=raw.user||'';const d=norm(raw);
     if(first&&!d.students.length&&S.students.length)persist();
     else{S=d;try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}sync='Synced'}
   }catch(e){sync='Offline: saved on this device only'}
@@ -84,7 +92,7 @@ window.addEventListener('focus',()=>pull(false));
 const sidx=id=>S.students.findIndex(s=>s.id===id);
 const stat=(d,id)=>(S.records[d]||{})[id];
 function head(){
-  $('#sync').textContent=sync;
+  $('#sync').textContent=(who?who+' · ':'')+sync;
   const T=[['students','Students'],['attendance','Take'],['daily','Daily'],['summary','Summary']];
   $('#nav').innerHTML=T.map(t=>`<button class="${tab===t[0]?'on':''}" data-t="${t[0]}">${t[1]}</button>`).join('');
   $('#nav').querySelectorAll('button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;msg='';if(tab==='attendance')draft={...(S.records[date]||{})};render()});
@@ -107,47 +115,7 @@ function saveAttendance(){
   S.students.forEach(s=>{if(draft[s.id])day[s.id]=draft[s.id]});
   S.records[date]=day;persist();msg=`Attendance for ${date} saved.`;render();
 }
-const CLASS=`1|Abad, Jamil Ace Policarpio
-2|Bacutana, Kyle Benedict Almariego
-3|Baliling, Jarid Noli Adonis
-4|Bautista, Ameerah Julia Victorio
-5|Bautista, Mark Lawrence Dela Cruz
-6|Budomo, Zhannen Tamondong
-7|Caacbay, Carl Edrick Carvajal
-8|Caldona, Jan Jomel Bustamante
-9|Camero, Neah Rebudan
-10|Carrera, John Lloyd Acierto
-11|De Guzman, Vernon Cerezo
-12|De Leon, Joseph Emil Maranan
-13|De Pedro, Jhon Christian Lariosa
-14|Dollente,Marc Enrico Suga
-15|Galano, Daryl Basug
-16|Gumpeng, Jefferson Estrada
-17|Imbo, Clifford Xander De Guzman
-18|Jimenez, Jasmine Idos
-19|Jose, Jimmy Rafon
-20|Laganas, Louie James Prado
-21|Lambino, Cyril James Tropicales
-22|Lapuz, Carl Ianne Casaclang
-23|Licuanan, Brian Delos Santos
-24|Llovido, John Mark Castro
-25|Lopez, Jasper Naz Evangelista
-26|Mana, Rechelle May Estrada
-27|Mangaliag, Joseph Camba
-28|Molano, Tabitha Velarde
-29|Nava, Cyril Alexis Marcaida
-30|Navarro, Nica Emma Evangelio
-31|Ordoña, April Joyce Casuela
-32|Palma, Jay-vie Miguel
-33|Pinto, Aira Cardinas
-34|Quinto, Rechelle N/a
-35|Reyes, Aira Jediah Murillo
-36|Reyes, Aron John Herradura
-37|Sanchez, Kean David
-38|Soriano, Jophel Latonio
-39|Valencia, Aaron John Perales
-40|Ventenilla, Charles Andrei Soria
-41|Vila, Oggie Legara`;
+
 function importText(t){
   let n=0,skip=0;
   t.split(/\r?\n/).forEach(l=>{
@@ -178,7 +146,7 @@ async function importSheet(file){
 function vStudents(){
   const f=S.students.filter(s=>(s.name+' '+s.id).toLowerCase().includes(q.toLowerCase()));
   return `<div class="card"><div class="row"><input class="id" id="sid" placeholder="ID"><input id="sname" placeholder="Student name"><button class="pri" id="add">Add</button></div></div>
-  <div class="card"><div class="row">${S.students.length?'':'<button class="pri" id="cls">Load class list (41 students)</button>'}<button id="impx" class="pri">Import spreadsheet</button><input type="file" id="filex" accept=".xlsx,.csv" hidden><button id="imp">Import students.txt</button><button id="exp">Download spreadsheet</button><input type="file" id="file" accept=".txt,text/plain" hidden></div></div>
+  <div class="card"><div class="row"><button id="impx" class="pri">Import spreadsheet</button><input type="file" id="filex" accept=".xlsx,.csv" hidden><button id="imp">Import students.txt</button><button id="exp">Download spreadsheet</button><input type="file" id="file" accept=".txt,text/plain" hidden></div></div>
   <div class="card"><input id="q" placeholder="Search by name or ID" value="${esc(q)}">
   <div class="list" style="margin-top:8px">${f.map(s=>`<div><span class="name"><b>${esc(s.id)}</b> &nbsp;${esc(s.name)}</span><button class="del" data-del="${esc(s.id)}">Remove</button></div>`).join('')||`<p class="mut">${S.students.length?'No student found.':'No students registered.'}</p>`}</div></div>`;
 }
@@ -214,7 +182,6 @@ function render(){
   $('#view').innerHTML=(msg?`<p class="card" style="padding:10px 14px">${esc(msg)}</p>`:'')+v;
   const V=$('#view'),on=(s,f)=>{const e=V.querySelector(s);if(e)e.onclick=f};
   on('#add',addStudent);on('#save',saveAttendance);
-  on('#cls',()=>importText(CLASS));
   on('#imp',()=>$('#file').click());
   on('#impx',()=>$('#filex').click());
   const fx=$('#filex');if(fx)fx.onchange=()=>{if(fx.files[0])importSheet(fx.files[0])};
@@ -224,7 +191,7 @@ function render(){
   V.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>delStudent(b.dataset.del));
   V.querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{draft[b.dataset.id]=b.dataset.k;render()});
   const qi=$('#q');if(qi)qi.oninput=()=>{q=qi.value;const p=qi.selectionStart;render();const n=$('#q');n.focus();n.setSelectionRange(p,p)};
-  const di=$('#date');if(di)di.onchange=()=>{if(di.value){date=di.value;draft={...(S.records[date]||{})};msg='';render()}};
+  const di=$('#date');if(di)di.onchange=()=>{if(di.value){picked=true;date=di.value;draft={...(S.records[date]||{})};msg='';render()}};
   const su=$('#sum');if(su)su.onchange=()=>{sumId=su.value;render()};
   const sn=$('#sname');if(sn)sn.onkeydown=e=>{if(e.key==='Enter')addStudent()};
 }
